@@ -117,9 +117,9 @@ export function AnalysisForm({ onRequireApiKey }: Props) {
         description: `Compatibilidade estimada em ${analysis.score}%.`,
       });
     } catch {
-      toast.error("Não foi possível concluir a análise", {
-        description: "Verifique a sua chave de API e tente novamente.",
-      });
+      /* O toast de erro já é exibido dentro de analyzeResume, com a mensagem
+         real do servidor (HTTP 500, timeout, CORS, etc.). Aqui apenas deixamos
+         o bloco `finally` resetar o estado de loading. */
     } finally {
       setLoading(false);
     }
