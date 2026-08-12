@@ -4,7 +4,6 @@ import { Textarea } from "@/components/ui/textarea";
 
 export type JobData = {
   title: string;
-  link: string;
   description: string;
 };
 
@@ -28,20 +27,12 @@ export function JobFields({ value, onChange, descriptionInvalid }: Props) {
         />
       </div>
 
-      <div className="grid gap-2">
-        <Label htmlFor="job-link">
-          Link da vaga <span className="text-muted-foreground">(opcional)</span>
-        </Label>
-        <Input
-          id="job-link"
-          type="url"
-          inputMode="url"
-          aria-label="Link da vaga (opcional)"
-          placeholder="https://empresa.com/vagas/123"
-          value={value.link}
-          onChange={(e) => onChange({ ...value, link: e.target.value })}
-        />
-      </div>
+      {/*
+        Campo "Link da vaga" removido (2026-08).
+        Motivo: o backend não faz scraping da URL — o campo era decorativo
+        e enganava o usuário. Reintroduzir apenas quando o endpoint de
+        extração automática (fetch + parse da vaga) for implementado.
+      */}
 
       <div className="grid gap-2">
         <Label htmlFor="job-description">Descrição da vaga</Label>

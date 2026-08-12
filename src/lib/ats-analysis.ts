@@ -39,9 +39,9 @@ type BackendAnalysisResponse = {
 /**
  * Envia a vaga e o currículo para o backend e devolve a análise ATS.
  *
- * O backend detém a chave da LLM (server-side, via `.env`); por isso a chave
- * informada pelo usuário no frontend (BYOK) é recebida apenas para preservar a
- * assinatura/estado existente, mas não é enviada na requisição.
+ * O backend detém a chave da LLM inteiramente no servidor (via `.env`).
+ * Não existe mais fluxo BYOK (Bring Your Own Key) no frontend — removido em
+ * 2026-08 por ser vestigial: a chave nunca era de fato enviada nem usada.
  *
  * Mapeamento backend -> AnalysisResult:
  *   score                 -> score
@@ -58,8 +58,6 @@ type BackendAnalysisResponse = {
 export async function analyzeResume(
   jobData: JobData,
   resumeData: string,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  _apiKey: string,
 ): Promise<AnalysisResult> {
   try {
     const response = await fetch(`${API_BASE_URL}/api/analyze`, {

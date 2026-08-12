@@ -12,15 +12,21 @@ import { AnalysisSkeleton } from "@/components/analysis-skeleton";
 import { ResultsReport } from "@/components/results-report";
 import { ScoreComparison } from "@/components/score-comparison";
 import { ResumeEditor } from "@/components/resume-editor";
-import { getApiKey } from "@/lib/api-key";
 import { analyzeResume, type AnalysisResult } from "@/lib/ats-analysis";
 import { clearSession, emptySession, loadSession, saveSession } from "@/lib/session";
 
 type Props = {
-  onRequireApiKey: () => void;
+  /**
+   * @deprecated O fluxo BYOK (Bring Your Own Key) foi removido em 2026-08 —
+   * a chave sempre viveu apenas no backend (.env). Prop mantida opcional só
+   * para não quebrar componentes pai que ainda a repassam; pode ser
+   * removida de vez assim que o modal de Configurações de API Key for
+   * descontinuado.
+   */
+  onRequireApiKey?: () => void;
 };
 
-export function AnalysisForm({ onRequireApiKey }: Props) {
+export function AnalysisForm(_props: Props) {
   const [tab, setTab] = useState("job");
   const [job, setJob] = useState<JobData>(emptySession.job);
   const [resume, setResume] = useState("");
@@ -52,10 +58,10 @@ export function AnalysisForm({ onRequireApiKey }: Props) {
 
   const jobEmpty = !job.description.trim();
   const resumeEmpty = !resume.trim();
-  const hasSessionData = Boolean(job.title || job.link || job.description || resume || result);
+  const hasSessionData = Boolean(job.title || job.description || resume || result);
 
   function handleNewAnalysis() {
-    clearSession(); // mantém a chave de API salva
+    clearSession();
     setJob(emptySession.job);
     setResume("");
     setResult(null);
@@ -96,20 +102,11 @@ export function AnalysisForm({ onRequireApiKey }: Props) {
       return;
     }
 
-    const apiKey = getApiKey();
-    if (!apiKey) {
-      toast.error("Chave de API não configurada", {
-        description: "Adicione a sua chave da OpenAI ou do Gemini para executar a análise.",
-      });
-      onRequireApiKey();
-      return;
-    }
-
     setLoading(true);
     setResult(null);
     setOptimizedResume("");
     try {
-      const analysis = await analyzeResume(job, resume, apiKey);
+      const analysis = await analyzeResume(job, resume);
       setResult(analysis);
       setOptimizedResume(analysis.optimizedResume);
       setAnalyzedResume(resume);
@@ -193,14 +190,13 @@ export function AnalysisForm({ onRequireApiKey }: Props) {
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>
-                  Limpa os formulários e o relatório salvos neste navegador. Sua chave de API é
-                  mantida.
+                  Limpa os formulários e o relatório salvos neste navegador.
                 </TooltipContent>
               </Tooltip>
             )}
 
             <p className="mt-3 text-center text-sm text-muted-foreground">
-              Gratuito e sem cadastro. Sua chave e seus dados permanecem no seu navegador.
+              Gratuito e sem cadastro. Seus dados de sessão permanecem apenas neste navegador.
             </p>
           </div>
         </CardContent>

@@ -12,7 +12,7 @@ export type SessionState = {
 };
 
 export const emptySession: SessionState = {
-  job: { title: "", link: "", description: "" },
+  job: { title: "", description: "" },
   resume: "",
   result: null,
   analyzedResume: "",
