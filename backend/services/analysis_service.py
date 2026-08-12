@@ -2,12 +2,16 @@
 
 Suporta dois provedores, selecionados pela variável de ambiente `LLM_PROVIDER`:
 
-    LLM_PROVIDER=openai   (padrão)  -> usa `openai`            + OPENAI_API_KEY
-    LLM_PROVIDER=gemini             -> usa `google-generativeai` + GEMINI_API_KEY
+    LLM_PROVIDER=openai   (padrão)  -> usa `openai`      + OPENAI_API_KEY
+    LLM_PROVIDER=gemini             -> usa `google-genai` + GEMINI_API_KEY
 
 Ambos são forçados a devolver JSON válido:
     - OpenAI: `response_format={"type": "json_object"}` (+ schema strict quando disponível)
-    - Gemini: `response_mime_type="application/json"` + `response_schema`
+    - Gemini: `response_mime_type="application/json"` + `response_schema` (SDK google-genai)
+
+IMPORTANTE: o Gemini usa o SDK novo (`google-genai`, pacote `google.genai`),
+NÃO o legado `google-generativeai`. São bibliotecas diferentes, com APIs
+incompatíveis entre si — misturar as duas é a causa mais comum de erro aqui.
 
 Erros de rede, timeout, JSON inválido ou schema divergente são convertidos em
 `AnalysisServiceError`, que a rota traduz em HTTP 500 com mensagem clara.
@@ -33,7 +37,11 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_TIMEOUT_SECONDS = float(os.getenv("LLM_TIMEOUT_SECONDS", "60"))
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+
+# 'gemini-1.5-flash', 'gemini-2.5-flash' e 'gemini-2.0-flash' estão
+# desativados/indisponíveis para chaves novas (404 NOT_FOUND).
+# 'gemini-3.6-flash' é o modelo GA atual (lançado 21/07/2026).
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
 
 
 class AnalysisServiceError(RuntimeError):
@@ -89,11 +97,16 @@ async def _call_openai(user_prompt: str) -> str:
 
 
 # --------------------------------------------------------------------------- #
-# Provedor: Gemini
+# Provedor: Gemini (SDK novo — google-genai)
 # --------------------------------------------------------------------------- #
 
 def _call_gemini_sync(user_prompt: str) -> str:
-    """Chamada síncrona ao Gemini (executada em thread separada)."""
+    """Chamada síncrona ao Gemini (executada em thread separada).
+
+    Usa o cliente `google.genai.Client` (SDK novo/oficial), com
+    `system_instruction` + `response_schema` no `GenerateContentConfig`
+    para obrigar o modelo a devolver JSON já validado contra o esquema.
+    """
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         raise AnalysisServiceError(
@@ -101,26 +114,24 @@ def _call_gemini_sync(user_prompt: str) -> str:
         )
 
     try:
-        import google.generativeai as genai
+        from google import genai
+        from google.genai import types
     except ImportError as exc:  # pragma: no cover
         raise AnalysisServiceError(
-            "Dependência 'google-generativeai' não instalada no servidor."
+            "Dependência 'google-genai' não instalada no servidor."
         ) from exc
 
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel(
-        model_name=GEMINI_MODEL,
-        system_instruction=SYSTEM_PROMPT,
-        generation_config={
-            "temperature": 0.2,
-            "response_mime_type": "application/json",
-            "response_schema": RESPONSE_SCHEMA,
-        },
-    )
+    client = genai.Client(api_key=api_key)
 
-    response = model.generate_content(
-        user_prompt,
-        request_options={"timeout": DEFAULT_TIMEOUT_SECONDS},
+    response = client.models.generate_content(
+        model=GEMINI_MODEL,
+        contents=user_prompt,
+        config=types.GenerateContentConfig(
+            system_instruction=SYSTEM_PROMPT,
+            temperature=0.2,
+            response_mime_type="application/json",
+            response_schema=RESPONSE_SCHEMA,
+        ),
     )
     text = (response.text or "").strip()
     if not text:
@@ -138,12 +149,16 @@ async def _call_gemini(user_prompt: str) -> str:
 # --------------------------------------------------------------------------- #
 
 def _strip_code_fences(raw: str) -> str:
-    """Remove cercas markdown (```json ... ```) que alguns modelos insistem em enviar."""
+    """Remove cercas markdown (```json ... ```) que alguns modelos insistem em enviar.
+
+    Com response_mime_type='application/json' isso raramente é necessário,
+    mas mantemos como rede de segurança.
+    """
     text = raw.strip()
     if text.startswith("```"):
         text = text.split("\n", 1)[-1] if "\n" in text else text
         if text.endswith("```"):
-            text = text[: -3]
+            text = text[:-3]
     return text.strip()
 
 
