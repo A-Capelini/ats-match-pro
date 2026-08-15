@@ -1,6 +1,7 @@
 import { toast } from "sonner";
 
 import type { JobData } from "@/components/job-fields";
+import { getOrCreateSessionId } from "@/lib/session-id";
 
 export type AnalysisResult = {
   score: number;
@@ -9,6 +10,18 @@ export type AnalysisResult = {
   strengths: string[];
   weaknesses: string[];
   suggestions: string[];
+};
+
+/**
+ * Item de histórico (Fase 3) — apenas o resumo retornado pelo backend.
+ * Não inclui vaga/currículo/currículo otimizado: o backend nunca os guarda.
+ */
+export type HistoryItem = {
+  id: number;
+  jobTitle: string;
+  score: number;
+  optimizedScore: number;
+  createdAt: string;
 };
 
 /**
@@ -36,12 +49,43 @@ type BackendAnalysisResponse = {
   suggestions?: string[];
 };
 
+type BackendHistoryEntry = {
+  id: number;
+  job_title: string;
+  score: number;
+  optimized_score: number;
+  created_at: string;
+};
+
+type BackendHistoryListResponse = {
+  items: BackendHistoryEntry[];
+};
+
+/** Monta os headers padrão de toda chamada autenticada por sessão anônima. */
+function sessionHeaders(): HeadersInit {
+  return { "X-Session-Id": getOrCreateSessionId() };
+}
+
+/** Extrai a mensagem de erro do corpo `{ "detail": "..." }` que o FastAPI retorna. */
+async function extractErrorDetail(response: Response, fallback: string): Promise<string> {
+  try {
+    const body = (await response.json()) as { detail?: string };
+    return body.detail ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 /**
  * Envia a vaga e o currículo para o backend e devolve a análise ATS.
  *
  * O backend detém a chave da LLM inteiramente no servidor (via `.env`).
- * Não existe mais fluxo BYOK (Bring Your Own Key) no frontend — removido em
+ * Não existe fluxo BYOK (Bring Your Own Key) no frontend — removido em
  * 2026-08 por ser vestigial: a chave nunca era de fato enviada nem usada.
+ *
+ * Envia o header `X-Session-Id` para que o backend salve um resumo desta
+ * análise no histórico (Fase 3) — falha em salvar o histórico nunca
+ * impede a análise de ser retornada normalmente.
  *
  * Mapeamento backend -> AnalysisResult:
  *   score                 -> score
@@ -62,7 +106,7 @@ export async function analyzeResume(
   try {
     const response = await fetch(`${API_BASE_URL}/api/analyze`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...sessionHeaders() },
       body: JSON.stringify({
         job_title: jobData.title,
         job_description: jobData.description,
@@ -71,14 +115,7 @@ export async function analyzeResume(
     });
 
     if (!response.ok) {
-      // O FastAPI retorna { "detail": "mensagem" } nos erros.
-      let detail = `Erro do servidor (${response.status}).`;
-      try {
-        const errorBody = (await response.json()) as { detail?: string };
-        if (errorBody.detail) detail = errorBody.detail;
-      } catch {
-        /* corpo não-JSON: mantém a mensagem padrão */
-      }
+      const detail = await extractErrorDetail(response, `Erro do servidor (${response.status}).`);
       throw new Error(detail);
     }
 
@@ -104,5 +141,47 @@ export async function analyzeResume(
 
     // Re-lança para que o chamador resete o loading no `finally`.
     throw error;
+  }
+}
+
+/**
+ * Lista o histórico de análises da sessão atual (mais recente primeiro).
+ *
+ * Diferente de `analyzeResume`, não exibe toast em caso de erro — quem
+ * chama decide como comunicar a falha (ex.: estado vazio silencioso na aba
+ * de histórico), já que essa é uma funcionalidade secundária.
+ */
+export async function listAnalyses(): Promise<HistoryItem[]> {
+  const response = await fetch(`${API_BASE_URL}/api/analyses`, {
+    method: "GET",
+    headers: sessionHeaders(),
+  });
+
+  if (!response.ok) {
+    const detail = await extractErrorDetail(response, `Erro do servidor (${response.status}).`);
+    throw new Error(detail);
+  }
+
+  const data = (await response.json()) as BackendHistoryListResponse;
+
+  return data.items.map((item) => ({
+    id: item.id,
+    jobTitle: item.job_title,
+    score: item.score,
+    optimizedScore: item.optimized_score,
+    createdAt: item.created_at,
+  }));
+}
+
+/** Remove uma entrada do histórico da sessão atual. */
+export async function deleteAnalysisEntry(id: number): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/analyses/${id}`, {
+    method: "DELETE",
+    headers: sessionHeaders(),
+  });
+
+  if (!response.ok && response.status !== 204) {
+    const detail = await extractErrorDetail(response, `Erro do servidor (${response.status}).`);
+    throw new Error(detail);
   }
 }

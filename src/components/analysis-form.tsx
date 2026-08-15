@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { FileText, Briefcase, ScanSearch, Loader2, RefreshCw } from "lucide-react";
+import { FileText, Briefcase, ScanSearch, Loader2, RefreshCw, History } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -12,6 +12,7 @@ import { AnalysisSkeleton } from "@/components/analysis-skeleton";
 import { ResultsReport } from "@/components/results-report";
 import { ScoreComparison } from "@/components/score-comparison";
 import { ResumeEditor } from "@/components/resume-editor";
+import { HistoryList } from "@/components/history-list";
 import { analyzeResume, type AnalysisResult } from "@/lib/ats-analysis";
 import { clearSession, emptySession, loadSession, saveSession } from "@/lib/session";
 
@@ -36,6 +37,9 @@ export function AnalysisForm(_props: Props) {
   const [optimizedResume, setOptimizedResume] = useState("");
   const [analyzedResume, setAnalyzedResume] = useState("");
   const [restored, setRestored] = useState(false);
+  // Incrementado a cada análise concluída: força a aba de Histórico a
+  // recarregar a lista na próxima vez que for aberta (ver HistoryList key).
+  const [historyVersion, setHistoryVersion] = useState(0);
 
   // Restaura a sessão anterior (localStorage) após a hidratação.
   useEffect(() => {
@@ -110,6 +114,7 @@ export function AnalysisForm(_props: Props) {
       setResult(analysis);
       setOptimizedResume(analysis.optimizedResume);
       setAnalyzedResume(resume);
+      setHistoryVersion((v) => v + 1);
       toast.success("Análise concluída", {
         description: `Compatibilidade estimada em ${analysis.score}%.`,
       });
@@ -127,7 +132,7 @@ export function AnalysisForm(_props: Props) {
       <Card className="border-border shadow-sm">
         <CardContent className="pt-6">
           <Tabs value={tab} onValueChange={setTab}>
-            <TabsList className="grid w-full grid-cols-2">
+            <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="job" className="min-h-11 gap-2">
                 <Briefcase className="size-4" aria-hidden="true" />
                 Dados da vaga
@@ -135,6 +140,10 @@ export function AnalysisForm(_props: Props) {
               <TabsTrigger value="resume" className="min-h-11 gap-2">
                 <FileText className="size-4" aria-hidden="true" />
                 Seu currículo
+              </TabsTrigger>
+              <TabsTrigger value="history" className="min-h-11 gap-2">
+                <History className="size-4" aria-hidden="true" />
+                Histórico
               </TabsTrigger>
             </TabsList>
 
@@ -149,56 +158,63 @@ export function AnalysisForm(_props: Props) {
                 invalid={submitted && resumeEmpty}
               />
             </TabsContent>
+
+            <TabsContent value="history" className="mt-6 focus-visible:outline-none">
+              {/* `key` força remontagem (e recarga da lista) a cada nova análise */}
+              <HistoryList key={historyVersion} />
+            </TabsContent>
           </Tabs>
 
-          <div className="mt-8 border-t border-border pt-6">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  size="lg"
-                  onClick={handleAnalyze}
-                  disabled={loading}
-                  aria-label="Analisar compatibilidade com sistemas ATS"
-                  className="min-h-12 w-full gap-2 text-base font-semibold focus-visible:ring-offset-2"
-                >
-                  {loading ? (
-                    <Loader2 className="animate-spin" aria-hidden="true" />
-                  ) : (
-                    <ScanSearch aria-hidden="true" />
-                  )}
-                  {loading ? "Analisando…" : "Analisar Compatibilidade (ATS)"}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                Compara palavras-chave, requisitos e estrutura do seu currículo com a vaga.
-              </TooltipContent>
-            </Tooltip>
-
-            {hasSessionData && (
+          {tab !== "history" && (
+            <div className="mt-8 border-t border-border pt-6">
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
                     type="button"
-                    variant="ghost"
-                    onClick={handleNewAnalysis}
-                    aria-label="Iniciar uma nova análise e limpar os dados salvos"
-                    className="mt-3 min-h-11 w-full gap-2 focus-visible:ring-offset-2"
+                    size="lg"
+                    onClick={handleAnalyze}
+                    disabled={loading}
+                    aria-label="Analisar compatibilidade com sistemas ATS"
+                    className="min-h-12 w-full gap-2 text-base font-semibold focus-visible:ring-offset-2"
                   >
-                    <RefreshCw className="size-4" aria-hidden="true" />
-                    Nova análise
+                    {loading ? (
+                      <Loader2 className="animate-spin" aria-hidden="true" />
+                    ) : (
+                      <ScanSearch aria-hidden="true" />
+                    )}
+                    {loading ? "Analisando…" : "Analisar Compatibilidade (ATS)"}
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>
-                  Limpa os formulários e o relatório salvos neste navegador.
+                  Compara palavras-chave, requisitos e estrutura do seu currículo com a vaga.
                 </TooltipContent>
               </Tooltip>
-            )}
 
-            <p className="mt-3 text-center text-sm text-muted-foreground">
-              Gratuito e sem cadastro. Seus dados de sessão permanecem apenas neste navegador.
-            </p>
-          </div>
+              {hasSessionData && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={handleNewAnalysis}
+                      aria-label="Iniciar uma nova análise e limpar os dados salvos"
+                      className="mt-3 min-h-11 w-full gap-2 focus-visible:ring-offset-2"
+                    >
+                      <RefreshCw className="size-4" aria-hidden="true" />
+                      Nova análise
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    Limpa os formulários e o relatório salvos neste navegador.
+                  </TooltipContent>
+                </Tooltip>
+              )}
+
+              <p className="mt-3 text-center text-sm text-muted-foreground">
+                Gratuito e sem cadastro. Seus dados de sessão permanecem apenas neste navegador.
+              </p>
+            </div>
+          )}
         </CardContent>
       </Card>
 
