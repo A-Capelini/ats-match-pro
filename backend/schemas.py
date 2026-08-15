@@ -65,3 +65,29 @@ class ErrorResponse(BaseModel):
     """Corpo de erro padronizado retornado pela API."""
 
     detail: str = Field(..., description="Mensagem de erro legível para o usuário")
+
+
+# --------------------------------------------------------------------------- #
+# Histórico de análises (Fase 3) — resumo apenas, anônimo por session_id.
+# --------------------------------------------------------------------------- #
+
+
+class HistoryEntry(BaseModel):
+    """Um item do histórico: apenas o resumo, nunca o conteúdo original.
+
+    Deliberadamente NÃO inclui job_description, resume_text nem
+    ats_optimized_resume — o produto é anônimo/sem login, então evitamos
+    reter dados pessoais (currículo) além do necessário.
+    """
+
+    id: int
+    job_title: str
+    score: int = Field(..., ge=0, le=100)
+    optimized_score: int = Field(..., ge=0, le=100)
+    created_at: str = Field(..., description="Timestamp UTC (ISO 8601, gerado pelo SQLite)")
+
+
+class HistoryListResponse(BaseModel):
+    """Lista de análises anteriores de uma sessão (mais recente primeiro)."""
+
+    items: list[HistoryEntry] = Field(default_factory=list)

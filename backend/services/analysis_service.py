@@ -100,6 +100,30 @@ async def _call_openai(user_prompt: str) -> str:
 # Provedor: Gemini (SDK novo — google-genai)
 # --------------------------------------------------------------------------- #
 
+def _sanitize_schema_for_gemini(schema: dict) -> dict:
+    """Remove chaves do JSON Schema que o `response_schema` do Gemini rejeita.
+
+    `additionalProperties` é o caso conhecido: mesmo com o anúncio oficial de
+    suporte (nov/2025), a API ainda devolve 400 INVALID_ARGUMENT
+    ("Unknown name additional_properties") dependendo da versão do SDK
+    instalada. Removemos recursivamente por segurança — não afeta a
+    validação, que já é garantida pelo Pydantic (`AnalyzeResponse`) no
+    passo seguinte.
+    """
+    if isinstance(schema, dict):
+        return {
+            key: _sanitize_schema_for_gemini(value)
+            for key, value in schema.items()
+            if key != "additionalProperties"
+        }
+    if isinstance(schema, list):
+        return [_sanitize_schema_for_gemini(item) for item in schema]
+    return schema
+
+
+GEMINI_RESPONSE_SCHEMA = _sanitize_schema_for_gemini(RESPONSE_SCHEMA)
+
+
 def _call_gemini_sync(user_prompt: str) -> str:
     """Chamada síncrona ao Gemini (executada em thread separada).
 
@@ -130,7 +154,7 @@ def _call_gemini_sync(user_prompt: str) -> str:
             system_instruction=SYSTEM_PROMPT,
             temperature=0.2,
             response_mime_type="application/json",
-            response_schema=RESPONSE_SCHEMA,
+            response_schema=GEMINI_RESPONSE_SCHEMA,
         ),
     )
     text = (response.text or "").strip()

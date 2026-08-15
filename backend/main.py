@@ -7,14 +7,18 @@ Backend da aplicação de análise de currículos para sistemas ATS
 
 Estrutura:
     main.py                        -> app, CORS, health check, registro de routers
+    database.py                    -> SQLite (histórico de análises, Fase 3)
     schemas.py                     -> modelos Pydantic (request/response)
     prompts.py                     -> SYSTEM_PROMPT + esquema JSON + user prompt
     routers/analysis.py            -> POST /api/analyze
+    routers/history.py             -> GET/DELETE /api/analyses (histórico)
     services/analysis_service.py   -> integração real com a LLM (OpenAI/Gemini)
 
 Regras de ouro (inquebráveis):
 - A IA NÃO PODE alucinar qualificações ausentes no currículo original.
 - O `ats_optimized_resume` é uma REORGANIZAÇÃO dos fatos existentes.
+- O histórico guarda apenas RESUMO (nunca currículo/vaga), é anônimo
+  por session_id (sem login) e nunca deve impedir a análise principal.
 
 Execução local (desenvolvimento):
     pip install -r requirements.txt
@@ -33,8 +37,10 @@ from slowapi.errors import RateLimitExceeded
 # Carrega variáveis do .env ANTES de importar módulos que leem os defaults.
 load_dotenv()
 
+from database import init_db  # noqa: E402
 from limiter import limiter  # noqa: E402
 from routers.analysis import router as analysis_router  # noqa: E402
+from routers.history import router as history_router  # noqa: E402
 
 # --------------------------------------------------------------------------- #
 # Configuração da aplicação
@@ -46,20 +52,18 @@ app = FastAPI(
         "API REST para análise de compatibilidade entre currículos e "
         "descrições de vagas (ATS) com geração de currículo otimizado."
     ),
-    version="0.2.0",
+    version="0.3.0",
 )
+
+# Cria a tabela do histórico (se ainda não existir) na subida do servidor.
+init_db()
 
 # --------------------------------------------------------------------------- #
 # Rate Limiting (slowapi)
 # --------------------------------------------------------------------------- #
-# O slowapi exige dois anexos na instância da app:
-#   1. `app.state.limiter`     -> a instância do Limiter (usada pelos decorators)
-#   2. `exception_handler`     -> captura RateLimitExceeded e devolve HTTP 429
 app.state.limiter = limiter
 
 
-# Exception handler custom: retorna um JSON limpo e mensagem amigável em PT-BR
-# quando o IP do usuário ultrapassa o limite configurado.
 @app.exception_handler(RateLimitExceeded)
 async def rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
     return JSONResponse(
@@ -75,8 +79,6 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONRe
 # --------------------------------------------------------------------------- #
 # CORS
 # --------------------------------------------------------------------------- #
-# Origens de desenvolvimento do frontend React (Vite/CRA/Next).
-# Em produção, defina ALLOWED_ORIGINS no .env como lista separada por vírgula.
 DEFAULT_ORIGINS = [
     "http://localhost:5173",
     "http://localhost:3000",
@@ -96,6 +98,8 @@ app.add_middleware(
     allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
+    # X-Session-Id precisa estar liberado explicitamente para o navegador
+    # conseguir enviá-lo em requisições cross-origin (dev: 8080 -> 8000).
     allow_headers=["*"],
 )
 
@@ -104,6 +108,7 @@ app.add_middleware(
 # --------------------------------------------------------------------------- #
 
 app.include_router(analysis_router)  # expõe POST /api/analyze
+app.include_router(history_router)   # expõe GET/DELETE /api/analyses
 
 
 # --------------------------------------------------------------------------- #

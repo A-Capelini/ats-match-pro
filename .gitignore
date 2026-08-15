@@ -79,3 +79,6 @@ dist-ssr
 # Cache do Vite / lockfile duplicado
 .vite/
 package-lock.json
+
+# Banco do histórico (Fase 3) — dados locais, não versionar
+backend/data/
